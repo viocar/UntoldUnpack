@@ -32,20 +32,21 @@ namespace UntoldUnpack
                 FileSize = reader.ReadUInt32();
                 NumEntries = reader.ReadUInt32();
                 EntryOffset = reader.ReadUInt32();
-
                 if (MagicNumber != ExpectedMagicNumber) throw new Exception("Invalid MBM file");
 
                 reader.BaseStream.Seek(EntryOffset, SeekOrigin.Begin);
 
                 int validEntries = 0;
                 Entries = new List<Entry>();
-                while (validEntries < NumEntries)
+                if (NumEntries != 0xFFFFFFFF) // Some empty files will have this. I'm not gonna change everything to check for Int32 instead of UInt32, so 0xFFFFFFFF will do.
                 {
-                    Entry newEntry = new Entry(reader);
-                    Entries.Add(newEntry);
-                    if (newEntry.NumBytes != 0) validEntries++;
+                    for (int x = 0; x <= NumEntries; x++) // Previously used a while loop. EON MBMs have empty entries, which broke previously correct assumptions.
+                    {
+                        Entry newEntry = new Entry(reader);
+                        Entries.Add(newEntry);
+                        if (newEntry.NumBytes != 0) validEntries++;
+                    }
                 }
-
                 ActualFileSize = (uint)reader.BaseStream.Length;
             }
         }
@@ -60,7 +61,6 @@ namespace UntoldUnpack
                 else writer.WriteLine();
                 writer.WriteLine("Number of entries: {0}", NumEntries);
                 writer.WriteLine();
-
                 foreach (Entry entry in Entries.Where(x => x.NumBytes != 0 && x.StringOffset != 0))
                 {
                     writer.WriteLine("-- ID {0} --", entry.ID);
@@ -82,16 +82,22 @@ namespace UntoldUnpack
             public Entry(BinaryReader reader)
             {
                 ID = reader.ReadUInt32();
-                NumBytes = reader.ReadUInt32();
-                StringOffset = reader.ReadUInt32();
-                Padding = reader.ReadUInt32();
+                if (ID < 100000) // Unfortunately, at least one of the MBM files in EON is broken, which will cause an error.
+                {
+                    NumBytes = reader.ReadUInt32();
+                    StringOffset = reader.ReadUInt32();
+                    Padding = reader.ReadUInt32();
+                    long streamPosition = reader.BaseStream.Position;
+                    reader.BaseStream.Seek(StringOffset, SeekOrigin.Begin);
 
-                long streamPosition = reader.BaseStream.Position;
-                reader.BaseStream.Seek(StringOffset, SeekOrigin.Begin);
+                    String = EO4String.GetInstance().GetString(reader.ReadBytes((int)NumBytes));
 
-                String = EO4String.GetInstance().GetString(reader.ReadBytes((int)NumBytes));
-
-                reader.BaseStream.Seek(streamPosition, SeekOrigin.Begin);
+                    reader.BaseStream.Seek(streamPosition, SeekOrigin.Begin);
+                }
+                else
+                {
+                    String = "Error in entry " + ID.ToString() + "!"; // This won't actually be written into the file.
+                }
             }
         }
     }
